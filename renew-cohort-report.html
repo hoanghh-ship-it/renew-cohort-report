@@ -162,7 +162,15 @@
 
   <div class="card">
     <h2>Cancel rate theo gói giá (D0 → D30)</h2>
-    <p class="note" style="margin:-6px 0 12px"><b>Day D</b> = % sub đã huỷ trong vòng D ngày kể từ khi đăng ký (huỷ tích luỹ, đường cong tăng dần). Cohort cố định = sub đã thu tiền & có <b>≥30 ngày lịch sử</b>; thời điểm huỷ lấy từ <code>updated_at</code>. Card này dùng <b>toàn bộ dữ liệu</b> (lọc theo funnel/giá, <b>không</b> theo bộ lọc ngày) để quan sát đủ 30 ngày.</p>
+    <p class="note" style="margin:-6px 0 12px"><b>Day D</b> = % sub đã huỷ trong vòng D ngày kể từ khi đăng ký (huỷ tích luỹ, đường cong tăng dần). Mỗi cửa sổ dùng cohort cố định = sub đã thu tiền & có <b>≥ số ngày cửa sổ</b> lịch sử (gói mới chỉ hiện ở cửa sổ ngắn). Thời điểm huỷ lấy từ <code>updated_at</code>. Card dùng <b>toàn bộ dữ liệu</b> (lọc funnel/giá, KHÔNG theo bộ lọc ngày).</p>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+      <span style="color:var(--mut);font-size:12px">Cửa sổ:</span>
+      <div class="seg" id="cancelWin">
+        <button data-w="7">D0→D7</button>
+        <button data-w="14" class="on">D0→D14</button>
+        <button data-w="30">D0→D30</button>
+      </div>
+    </div>
     <div id="cancelLegend" class="legend" style="flex-wrap:wrap"></div>
     <div style="overflow:auto"><div id="cancelChart"></div></div>
     <div style="max-height:340px;overflow:auto;margin-top:14px">
@@ -269,6 +277,7 @@ const selFunnels = new Set();   // rỗng = tất cả funnel
 let GRAN='day';
 let TRIMODE='pct';   // 'pct' | 'count'
 let TRIGRAN='week';  // 'week' | 'day' — cách gom cohort cho triangle
+let CANCELWIN=14;    // 7 | 14 | 30 — cửa sổ cancel curve
 
 function setRange(days){
   const to=new Date(ANCHOR);
@@ -349,9 +358,10 @@ function renderCancel(subs){
   const legend=document.getElementById('cancelLegend');
   const chart=document.getElementById('cancelChart');
   const tbody=document.querySelector('#cancelTbl tbody');
+  const WIN=CANCELWIN;
   const ageDays=s=>(ANCHOR-parse(s.created_at))/86400000;
-  // cohort cố định: sub đã thu tiền (loại 'created') VÀ có ≥30 ngày lịch sử → quan sát đủ cửa sổ 30d
-  const pop=subs.filter(s=>s.status!=='created' && ageDays(s)>=30);
+  // cohort cố định: sub đã thu tiền (loại 'created') VÀ có ≥WIN ngày lịch sử → quan sát đủ cửa sổ
+  const pop=subs.filter(s=>s.status!=='created' && ageDays(s)>=WIN);
   const byP={};
   pop.forEach(s=>{const k=s.price;(byP[k]=byP[k]||[]).push(s);});
   // chỉ gói có >=10 sub đủ tuổi để tránh nhiễu, sắp theo giá tăng dần
@@ -360,7 +370,7 @@ function renderCancel(subs){
   // rate huỷ tích luỹ tại ngày D (mẫu số cố định = cả cohort) → đơn điệu tăng
   function curve(arr){
     const out=[];
-    for(let D=0;D<=30;D++){
+    for(let D=0;D<=WIN;D++){
       const c=arr.filter(s=>s.status==='cancelled'&&cancelDay(s)<=D).length;
       out.push({D,rate:c/arr.length,c,n:arr.length});
     }
@@ -370,7 +380,7 @@ function renderCancel(subs){
         n:byP[p].length,curve:curve(byP[p])}));
 
   if(!series.length){
-    legend.innerHTML='';chart.innerHTML='<div class="note">Không đủ dữ liệu — cần gói có ≥10 sub đã có ít nhất 30 ngày lịch sử.</div>';
+    legend.innerHTML='';chart.innerHTML=`<div class="note">Không đủ dữ liệu — cần gói có ≥10 sub đã có ít nhất ${WIN} ngày lịch sử. Thử cửa sổ ngắn hơn.</div>`;
     tbody.innerHTML='';return;
   }
 
@@ -382,7 +392,7 @@ function renderCancel(subs){
   const W=Math.max(680,series.length?720:680), H=300, pL=46,pR=16,pT=14,pB=34;
   let ymax=0; series.forEach(s=>s.curve.forEach(pt=>{if(pt)ymax=Math.max(ymax,pt.rate);}));
   ymax=Math.max(0.05,Math.ceil(ymax*100/5)*5/100); // làm tròn lên bội số 5%
-  const X=D=>pL+(W-pL-pR)*(D/30);
+  const X=D=>pL+(W-pL-pR)*(D/WIN);
   const Y=r=>pT+(H-pT-pB)*(1-r/ymax);
   let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:${H}px">`;
   // y gridlines
@@ -392,8 +402,10 @@ function renderCancel(subs){
     svg+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="#2a2f3c" stroke-width="1"/>`;
     svg+=`<text x="${pL-6}" y="${y+3}" fill="#707788" font-size="10" text-anchor="end">${(r*100).toFixed(0)}%</text>`;
   }
-  // x labels
-  [0,5,10,15,20,25,30].forEach(D=>{
+  // x labels (động theo cửa sổ)
+  const xstep=WIN<=7?1:(WIN<=14?2:5);
+  const xticks=[]; for(let D=0;D<=WIN;D+=xstep) xticks.push(D); if(xticks[xticks.length-1]!==WIN) xticks.push(WIN);
+  xticks.forEach(D=>{
     svg+=`<text x="${X(D)}" y="${H-12}" fill="#707788" font-size="10" text-anchor="middle">D${D}</text>`;
   });
   // lines
@@ -542,6 +554,10 @@ document.querySelectorAll('#triMode button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#triGran button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#triGran button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');TRIGRAN=b.dataset.tg;render();
+});
+document.querySelectorAll('#cancelWin button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#cancelWin button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');CANCELWIN=+b.dataset.w;render();
 });
 document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>setRange(+b.dataset.d));
 ['from','to','price','fver','matureOnly'].forEach(id=>
