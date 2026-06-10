@@ -1,0 +1,35 @@
+name: Update data
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch latest FunnelFox data & rebuild
+        env:
+          FOX_SECRET: ${{ secrets.FOX_SECRET }}
+        run: python build.py
+      - name: Commit & push if changed
+        run: |
+          git config user.name "funnelfox-data-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html renew-cohort-report.html
+          if git diff --cached --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "Update data $(date -u +%FT%TZ)"
+            git push
+          fi
