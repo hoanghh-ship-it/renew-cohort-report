@@ -558,23 +558,27 @@ function render(){
   const T=shown.reduce((a,r)=>({n:a.n+r.n,cycles:a.cycles+r.cycles,
         active:a.active+r.active,cancelled:a.cancelled+r.cancelled,unpaid:a.unpaid+r.unpaid}),
         {n:0,cycles:0,active:0,cancelled:0,unpaid:0});
-  // R1/R2/R3: MỖI kỳ tính trên ĐÚNG tập sub đã đủ tuổi cho kỳ đó (age ≥ k × chu kỳ billing) → số chuẩn,
-  // không pha loãng bởi sub chưa kịp đạt kỳ. ⚠️ = kỳ này còn sub chưa đủ tuổi (mẫu số nhỏ hơn tổng sub renew được).
+  // R1/R2/R3 tính trên CÙNG 1 tập sub thì mới luôn R1≥R2≥R3 (vì renew≥3 ⊆ renew≥2 ⊆ renew≥1).
+  // Tập chung = sub đủ tuổi cho kỳ SÂU NHẤT còn đủ mẫu (≥MINB sub). Mỗi Rk = % trong tập đó đã renew ≥k.
+  // Kỳ sâu hơn K (chưa đủ mẫu sub đủ tuổi) hiện "–". ⚠️ = tập này là mature cohort, sub mới hơn chưa được tính.
   const ageOf=s=>(ANCHOR-parse(s.created_at))/86400000;
+  const MINB=5;
   const renewableN=subs.filter(s=>ageOf(s)>=intervalDays(s)).length;  // sub đủ tuổi renew ≥1 kỳ
-  const Rtot=[1,2,3].map(k=>{
-    const elig=subs.filter(s=>ageOf(s)>=k*intervalDays(s));
-    if(!elig.length) return {cnt:0,den:0,na:true,warn:false};
-    return {cnt:elig.filter(s=>renewals(s)>=k).length, den:elig.length, na:false, warn:elig.length<renewableN};
-  });
+  let K=0;
+  for(let k=1;k<=3;k++){ if(subs.filter(s=>ageOf(s)>=k*intervalDays(s)).length>=MINB) K=k; }
+  const base=K?subs.filter(s=>ageOf(s)>=K*intervalDays(s)):[];
+  const baseN=base.length;
+  const Rtot=[1,2,3].map(k=> (k<=K && baseN)
+      ? {cnt:base.filter(s=>renewals(s)>=k).length, den:baseN, na:false, warn:baseN<renewableN}
+      : {cnt:0,den:0,na:true,warn:false});
   const rpct=t=>(t && !t.na && t.den)?(t.cnt/t.den*100):null;
-  const warnIc=(t,k)=>t&&t.warn?` <span class="warn-ic" title="Chỉ ${t.den} sub đủ tuổi ${k} kỳ (≥${k} tuần) được tính — số còn lại chưa đủ age để đạt kỳ ${k}">⚠️</span>`:'';
+  const warnIc=t=>t&&t.warn?` <span class="warn-ic" title="Tính trên ${baseN} sub đã đủ tuổi ≥${K} kỳ (mature cohort, cùng mẫu số cho R1/R2/R3); ${renewableN-baseN} sub mới hơn chưa đủ tuổi nên chưa được tính">⚠️</span>`:'';
 
   const kpis=[
     ['Sub mới',T.n,'',''],
-    ['R1 — renew ≥1',rpct(Rtot[0])==null?'–':rpct(Rtot[0]).toFixed(1)+'%','acc',warnIc(Rtot[0],1),Rtot[0]],
-    ['R2 — renew ≥2',rpct(Rtot[1])==null?'–':rpct(Rtot[1]).toFixed(1)+'%','good',warnIc(Rtot[1],2),Rtot[1]],
-    ['R3 — renew ≥3',rpct(Rtot[2])==null?'–':rpct(Rtot[2]).toFixed(1)+'%','good',warnIc(Rtot[2],3),Rtot[2]],
+    ['R1 — renew ≥1',rpct(Rtot[0])==null?'–':rpct(Rtot[0]).toFixed(1)+'%','acc',warnIc(Rtot[0]),Rtot[0]],
+    ['R2 — renew ≥2',rpct(Rtot[1])==null?'–':rpct(Rtot[1]).toFixed(1)+'%','good',warnIc(Rtot[1]),Rtot[1]],
+    ['R3 — renew ≥3',rpct(Rtot[2])==null?'–':rpct(Rtot[2]).toFixed(1)+'%','good',warnIc(Rtot[2]),Rtot[2]],
     ['Tổng chu kỳ renew',T.cycles,'',''],
     ['Active hiện tại',T.active,'',''],
   ];
@@ -611,16 +615,16 @@ function render(){
       <td>${r.cycles}</td><td>${r.active}</td><td>${r.cancelled}</td><td>${r.unpaid}</td>
     </tr>`).join('');
   document.querySelector('#tbl tfoot').innerHTML=
-    `<tr><td>TỔNG <span style="color:var(--mut);font-weight:400;font-size:11px">(mỗi Rk trên sub đủ age của kỳ đó)</span></td><td></td><td>${T.n}</td>
-      ${Rtot.map((t,i)=>`<td>${rpct(t)==null?'–':rpct(t).toFixed(1)+'% <span style="color:var(--mut);font-size:11px;font-weight:400">('+t.cnt+'/'+t.den+')</span>'+warnIc(t,i+1)}</td>`).join('')}
+    `<tr><td>TỔNG <span style="color:var(--mut);font-weight:400;font-size:11px">(cùng mẫu số ${baseN} sub, R1≥R2≥R3)</span></td><td></td><td>${T.n}</td>
+      ${Rtot.map(t=>`<td>${rpct(t)==null?'–':rpct(t).toFixed(1)+'% <span style="color:var(--mut);font-size:11px;font-weight:400">('+t.cnt+'/'+t.den+')</span>'+warnIc(t)}</td>`).join('')}
       <td>${T.cycles}</td><td>${T.active}</td><td>${T.cancelled}</td><td>${T.unpaid}</td></tr>`;
 
   document.getElementById('footNote').innerHTML=
     `<b>R1/R2/R3</b> = % sub đã renew ít nhất 1/2/3 lần. Renew suy ra từ việc kỳ thanh toán `+
     `(<code>period_starts_at</code>) đã tiến qua kỳ đầu so với <code>created_at</code>. `+
-    `<b>Mỗi Rk chỉ tính trên các sub đã thực sự đủ tuổi cho kỳ đó</b> (age ≥ k × chu kỳ billing) nên số chuẩn, không bị pha loãng bởi sub còn non. `+
-    `Biểu tượng <b>⚠️</b> = kỳ này vẫn còn sub chưa đủ tuổi (mẫu số nhỏ hơn tổng sub renew được — số mang tính tạm thời, sẽ ổn định khi cohort già thêm). `+
-    `Vì mẫu số mỗi kỳ khác nhau (R2/R3 chỉ gồm sub cũ hơn), R2/R3 đôi khi có thể cao hơn R1 — đó là <b>survivorship</b>, không phải lỗi.`;
+    `<b>R1/R2/R3 tính trên CÙNG một tập sub</b> = các sub đã đủ tuổi cho kỳ sâu nhất còn đủ mẫu (age ≥ K × chu kỳ billing). `+
+    `Cùng mẫu số + tập lồng nhau (renew≥3 ⊆ ≥2 ⊆ ≥1) → <b>luôn R1 ≥ R2 ≥ R3</b>. Kỳ chưa đủ mẫu sub đủ tuổi hiện <b>"–"</b>. `+
+    `Biểu tượng <b>⚠️</b> = đây là <b>mature cohort</b> (chỉ gồm sub đã đủ tuổi đánh giá tới kỳ K); các sub mới hơn chưa đủ tuổi nên chưa được tính — số sẽ cập nhật khi chúng già thêm.`;
 
   document.getElementById('hdrSub').textContent=
     `${RAW.length} subscriptions · cập nhật tới ${ymd(ANCHOR)}`;
