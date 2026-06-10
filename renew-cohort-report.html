@@ -294,26 +294,37 @@ function mondayOf(d){const x=new Date(d);const wd=(x.getUTCDay()+6)%7;x.setUTCDa
   fvers.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent='v'+v;fSel.appendChild(o);});
 })();
 
-// ---- Funnel multi-select (checkbox) ----
+// ---- Funnel multi-select (checkbox), DANH SÁCH ĐỘNG theo bộ lọc giá/version ----
 const selFunnels = new Set();   // rỗng = tất cả funnel
-(function(){
+function updateFunnelBtn(){
+  document.getElementById('funnelBtnLabel').textContent =
+    selFunnels.size===0 ? 'Tất cả funnel' : `${selFunnels.size} funnel đã chọn`;
+}
+function buildFunnelList(){
+  const priceF=document.getElementById('price').value;
+  const fverF=document.getElementById('fver').value;
+  // chỉ tính funnel có sub khớp giá + version đang lọc
   const fnCount={};
-  RAW.forEach(s=>{const k=s.funnel||'(none)';fnCount[k]=(fnCount[k]||0)+1;});
-  const list=document.getElementById('funnelList');
-  Object.keys(fnCount).sort((a,b)=>fnCount[b]-fnCount[a]).forEach(name=>{
-    const id='fn_'+btoa(unescape(encodeURIComponent(name))).replace(/[^a-z0-9]/gi,'');
-    const lab=document.createElement('label');
-    lab.innerHTML=`<input type="checkbox" value="${name.replace(/"/g,'&quot;')}"> <span>${name}</span><span class="cnt">${fnCount[name]}</span>`;
-    list.appendChild(lab);
+  RAW.forEach(s=>{
+    if(priceF!=='' && String(s.price)!==priceF) return;
+    if(fverF!=='' && String(s.funnel_version)!==fverF) return;
+    const k=s.funnel||'(none)'; fnCount[k]=(fnCount[k]||0)+1;
   });
-  function updateBtn(){
-    const l=document.getElementById('funnelBtnLabel');
-    l.textContent = selFunnels.size===0 ? 'Tất cả funnel' : `${selFunnels.size} funnel đã chọn`;
-  }
+  // bỏ chọn các funnel không còn data với bộ lọc hiện tại
+  [...selFunnels].forEach(f=>{ if(!fnCount[f]) selFunnels.delete(f); });
+  const names=Object.keys(fnCount).sort((a,b)=>fnCount[b]-fnCount[a]);
+  const list=document.getElementById('funnelList');
+  list.innerHTML = names.length
+    ? names.map(name=>`<label><input type="checkbox" value="${name.replace(/"/g,'&quot;')}" ${selFunnels.has(name)?'checked':''}> <span>${name}</span><span class="cnt">${fnCount[name]}</span></label>`).join('')
+    : '<div class="note" style="padding:8px">Không có funnel nào cho bộ lọc giá/version hiện tại.</div>';
+  updateFunnelBtn();
+}
+(function(){
+  const list=document.getElementById('funnelList');
   list.addEventListener('change',e=>{
     if(e.target.type!=='checkbox') return;
     if(e.target.checked) selFunnels.add(e.target.value); else selFunnels.delete(e.target.value);
-    updateBtn(); render();
+    updateFunnelBtn(); render();
   });
   document.getElementById('funnelBtn').onclick=e=>{
     e.stopPropagation();
@@ -322,11 +333,12 @@ const selFunnels = new Set();   // rỗng = tất cả funnel
   document.getElementById('funnelPanel').onclick=e=>e.stopPropagation();
   document.addEventListener('click',()=>document.getElementById('funnelPanel').classList.remove('open'));
   document.getElementById('funnelAll').onclick=()=>{
-    list.querySelectorAll('input').forEach(c=>{c.checked=true;selFunnels.add(c.value);});updateBtn();render();
+    document.querySelectorAll('#funnelList input').forEach(c=>{c.checked=true;selFunnels.add(c.value);});updateFunnelBtn();render();
   };
   document.getElementById('funnelNone').onclick=()=>{
-    list.querySelectorAll('input').forEach(c=>c.checked=false);selFunnels.clear();updateBtn();render();
+    selFunnels.clear();document.querySelectorAll('#funnelList input').forEach(c=>c.checked=false);updateFunnelBtn();render();
   };
+  buildFunnelList();
 })();
 
 let GRAN='day';
@@ -684,8 +696,11 @@ document.querySelectorAll('#cancelWin button').forEach(b=>b.onclick=()=>{
   };
 })();
 document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>setRange(+b.dataset.d));
-['from','to','price','fver','matureOnly'].forEach(id=>
+['from','to','matureOnly'].forEach(id=>
   document.getElementById(id).addEventListener('change',render));
+// đổi giá/version => rebuild danh sách funnel (chỉ funnel có data) rồi render
+['price','fver'].forEach(id=>
+  document.getElementById(id).addEventListener('change',()=>{buildFunnelList();render();}));
 
 setRange(30); // mặc định 30 ngày
 </script>
