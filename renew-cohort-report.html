@@ -91,6 +91,9 @@
   .tri td.na{background:var(--panel2);color:#4b5163}
   header .updbtn{background:var(--acc);color:#fff;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap}
   header .updbtn:hover{filter:brightness(1.12)}
+  header .updbtn{border:0;cursor:pointer}
+  header .updbtn:disabled{opacity:.55;cursor:default;filter:none}
+  header .sub#updStatus{font-size:12px}
 </style>
 </head>
 <body>
@@ -98,7 +101,9 @@
   <h1>🦊 FunnelFox · Renew Cohort Report</h1>
   <span class="sub" id="hdrSub"></span>
   <span class="sub" id="builtAt" style="margin-left:auto"></span>
-  <a class="updbtn" href="https://github.com/hoanghh-ship-it/renew-cohort-report/actions/workflows/update-data.yml" target="_blank" rel="noopener" title="Mở GitHub Actions rồi bấm 'Run workflow' để kéo dữ liệu mới nhất từ FunnelFox">🔄 Cập nhật dữ liệu</a>
+  <span class="sub" id="updStatus"></span>
+  <button class="updbtn" id="updBtn" title="Cập nhật dữ liệu ngay trên trang (không chuyển sang GitHub)">🔄 Cập nhật dữ liệu</button>
+  <a href="#" id="updTokenReset" class="sub" style="font-size:11px;text-decoration:underline">đổi token</a>
 </header>
 <div class="wrap">
 
@@ -565,6 +570,65 @@ document.querySelectorAll('#cancelWin button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#cancelWin button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');CANCELWIN=+b.dataset.w;render();
 });
+
+// ---- Cập nhật dữ liệu ngay trên trang (gọi GitHub Actions, không rời trang) ----
+(function(){
+  const GH_REPO='hoanghh-ship-it/renew-cohort-report';
+  const WF='update-data.yml';
+  const btn=document.getElementById('updBtn');
+  const status=document.getElementById('updStatus');
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const setS=t=>{status.textContent=t;};
+  function getToken(){
+    let t=localStorage.getItem('gh_pat');
+    if(!t){
+      t=prompt('Dán GitHub fine-grained token (chỉ quyền Actions trên repo này).\nChỉ lưu trong trình duyệt này, không gửi đi đâu khác:');
+      if(t){t=t.trim();localStorage.setItem('gh_pat',t);}
+    }
+    return t;
+  }
+  document.getElementById('updTokenReset').onclick=e=>{
+    e.preventDefault();localStorage.removeItem('gh_pat');setS('đã xoá token đã lưu');
+  };
+  async function pollBuiltAt(old){
+    for(let i=0;i<45;i++){
+      await sleep(8000);
+      try{
+        const txt=await (await fetch(location.pathname+'?_='+Date.now(),{cache:'no-store'})).text();
+        const m=txt.match(/const BUILT_AT = "([^"]*)"/);
+        if(m && m[1] && m[1]!==old){ setS('✓ Đã cập nhật! Đang tải lại...'); await sleep(1000); location.reload(); return; }
+      }catch(e){}
+      setS('⏳ Đang cập nhật & deploy... ('+((i+1)*8)+'s)');
+    }
+    setS('⚠️ Lâu hơn dự kiến — thử tải lại trang sau ít phút.');
+    btn.disabled=false;
+  }
+  btn.onclick=async()=>{
+    const token=getToken();
+    if(!token){setS('cần token để cập nhật');return;}
+    btn.disabled=true; setS('⏳ Đang kích hoạt...');
+    try{
+      const res=await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/${WF}/dispatches`,{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'},
+        body:JSON.stringify({ref:'main'})
+      });
+      if(res.status===401||res.status===403){
+        localStorage.removeItem('gh_pat');
+        setS('❌ Token sai/thiếu quyền Actions. Bấm "đổi token" rồi thử lại.');
+        btn.disabled=false;return;
+      }
+      if(res.status!==204){
+        setS('❌ Lỗi '+res.status+' — '+(await res.text()).slice(0,80));
+        btn.disabled=false;return;
+      }
+      setS('⏳ Workflow đang chạy... (~1-2 phút)');
+      pollBuiltAt(BUILT_AT);
+    }catch(e){
+      setS('❌ Lỗi mạng: '+e.message); btn.disabled=false;
+    }
+  };
+})();
 document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>setRange(+b.dataset.d));
 ['from','to','price','fver','matureOnly'].forEach(id=>
   document.getElementById(id).addEventListener('change',render));
