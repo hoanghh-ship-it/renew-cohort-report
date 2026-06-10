@@ -554,19 +554,24 @@ function render(){
   });
   renderCancel(cancelPop);
 
-  // KPIs (dựa trên shown). Rn tổng = chỉ cộng cohort đủ tuổi cho kỳ đó (honest).
-  const T=shown.reduce((a,r)=>({n:a.n+r.n,cycles:a.cycles+r.cycles,
-        active:a.active+r.active,cancelled:a.cancelled+r.cancelled,unpaid:a.unpaid+r.unpaid}),
-        {n:0,cycles:0,active:0,cancelled:0,unpaid:0});
+  // KPIs (overview). Checkbox "Chỉ cohort đủ tuổi renew" → loại hẳn sub chưa đủ tuổi (age < 1 chu kỳ) khỏi mọi số overview.
+  const ageOf=s=>(ANCHOR-parse(s.created_at))/86400000;
+  const kpiSubs = matureOnly ? subs.filter(s=>ageOf(s)>=intervalDays(s)) : subs;
+  const T={
+    n:kpiSubs.length,
+    cycles:kpiSubs.reduce((a,s)=>a+renewals(s),0),
+    active:kpiSubs.filter(s=>s.status==='active').length,
+    cancelled:kpiSubs.filter(s=>s.status==='cancelled').length,
+    unpaid:kpiSubs.filter(s=>s.status==='unpaid').length,
+  };
   // R1/R2/R3 tính trên CÙNG 1 tập sub thì mới luôn R1≥R2≥R3 (vì renew≥3 ⊆ renew≥2 ⊆ renew≥1).
   // Tập chung = sub đủ tuổi cho kỳ SÂU NHẤT còn đủ mẫu (≥MINB sub). Mỗi Rk = % trong tập đó đã renew ≥k.
   // Kỳ sâu hơn K (chưa đủ mẫu sub đủ tuổi) hiện "–". ⚠️ = tập này là mature cohort, sub mới hơn chưa được tính.
-  const ageOf=s=>(ANCHOR-parse(s.created_at))/86400000;
   const MINB=5;
-  const renewableN=subs.filter(s=>ageOf(s)>=intervalDays(s)).length;  // sub đủ tuổi renew ≥1 kỳ
+  const renewableN=kpiSubs.filter(s=>ageOf(s)>=intervalDays(s)).length;  // sub đủ tuổi renew ≥1 kỳ
   let K=0;
-  for(let k=1;k<=3;k++){ if(subs.filter(s=>ageOf(s)>=k*intervalDays(s)).length>=MINB) K=k; }
-  const base=K?subs.filter(s=>ageOf(s)>=K*intervalDays(s)):[];
+  for(let k=1;k<=3;k++){ if(kpiSubs.filter(s=>ageOf(s)>=k*intervalDays(s)).length>=MINB) K=k; }
+  const base=K?kpiSubs.filter(s=>ageOf(s)>=K*intervalDays(s)):[];
   const baseN=base.length;
   const Rtot=[1,2,3].map(k=> (k<=K && baseN)
       ? {cnt:base.filter(s=>renewals(s)>=k).length, den:baseN, na:false, warn:baseN<renewableN}
