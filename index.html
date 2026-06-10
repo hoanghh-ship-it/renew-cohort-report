@@ -568,17 +568,15 @@ function render(){
   // Cùng base + tập lồng nhau (renew≥3 ⊆ ≥2 ⊆ ≥1) → luôn R1≥R2≥R3.
   // R1 = % renew ≥1 của toàn dân số đủ tuổi (= trung bình có trọng số cột Week 1 của triangle, không vượt cohort cao nhất).
   // ⚠️ ở R2/R3 = trong base còn sub chưa đủ tuổi đạt kỳ đó → R2/R3 là retention TÍCH LUỸ tới hiện tại (sẽ tăng khi già thêm).
-  // Gom theo TUẦN-cohort như bảng triangle. Mẫu số = sub thuộc các tuần đã đạt ≥ Week 1 (đủ tuổi có số Week 1).
-  // Cùng mẫu số cho R1/R2/R3 → R1≥R2≥R3, và R1 = đúng trung bình có trọng số cột Week 1 (không vượt cohort cao nhất).
-  const ageWk=key=>Math.floor((ANCHOR-new Date(key+'T00:00:00Z'))/(7*86400000));
-  const wkG={};
-  kpiSubs.forEach(s=>{const k=mondayOf(parse(s.created_at));(wkG[k]=wkG[k]||[]).push(s);});
-  const base=[]; const agedForK=[0,0,0];
-  Object.keys(wkG).forEach(k=>{const aw=ageWk(k); if(aw>=1) base.push.apply(base,wkG[k]); for(let j=1;j<=3;j++) if(aw>=j) agedForK[j-1]+=wkG[k].length;});
+  // Mẫu số = các sub ĐÃ ĐỦ TUỔI renew (age ≥ 1 chu kỳ billing) — loại sub quá mới chưa thể renew (tránh pha loãng).
+  // Cùng mẫu số cho R1/R2/R3 + tập lồng nhau → luôn R1 ≥ R2 ≥ R3. R1 = % sub đủ tuổi đã renew ≥1 lần.
+  const base = kpiSubs.filter(s=>ageOf(s)>=intervalDays(s));
   const baseN=base.length;
-  const Rtot=[1,2,3].map(k=> baseN
-    ? {cnt:base.filter(s=>renewals(s)>=k).length, den:baseN, na:false, warn:agedForK[k-1]<baseN, aged:agedForK[k-1]}
-    : {cnt:0,den:0,na:true,warn:false,aged:0});
+  const Rtot=[1,2,3].map(k=>{
+    if(!baseN) return {cnt:0,den:0,na:true,warn:false,aged:0};
+    const aged=base.filter(s=>ageOf(s)>=k*intervalDays(s)).length;  // số sub trong mẫu đã đủ tuổi đạt kỳ k
+    return {cnt:base.filter(s=>renewals(s)>=k).length, den:baseN, na:false, warn:aged<baseN, aged:aged};
+  });
   const rpct=t=>(t && !t.na && t.den)?(t.cnt/t.den*100):null;
   const warnIc=t=>t&&t.warn?` <span class="warn-ic" title="${t.den-t.aged}/${t.den} sub trong mẫu chưa đủ tuổi để đạt kỳ này — R này là retention TÍCH LUỸ tới hiện tại, sẽ tăng khi cohort già thêm">⚠️</span>`:'';
 
@@ -630,10 +628,10 @@ function render(){
   document.getElementById('footNote').innerHTML=
     `<b>R1/R2/R3</b> = % sub đã renew ít nhất 1/2/3 lần. Renew suy ra từ việc kỳ thanh toán `+
     `(<code>period_starts_at</code>) đã tiến qua kỳ đầu so với <code>created_at</code>. `+
-    `<b>R1/R2/R3 tính trên CÙNG một mẫu số</b> = các sub thuộc tuần-cohort đã đạt ≥ Week 1 (gom theo tuần như bảng dưới). `+
-    `Cùng mẫu số + tập lồng nhau (renew≥3 ⊆ ≥2 ⊆ ≥1) → <b>luôn R1 ≥ R2 ≥ R3</b>. `+
-    `<b>R1 = đúng trung bình có trọng số cột Week 1</b> của bảng triangle (nên không vượt quá cohort cao nhất). `+
-    `Biểu tượng <b>⚠️</b> ở R2/R3 = trong mẫu vẫn còn sub chưa đủ tuổi đạt kỳ đó, nên R2/R3 là retention <b>tích luỹ tới hiện tại</b> (sẽ tăng khi cohort già thêm), hơi thấp hơn giá trị "trưởng thành" cuối cùng.`;
+    `<b>Mẫu số = các sub đã đủ tuổi renew</b> (age ≥ 1 chu kỳ billing) — KHÔNG gồm sub quá mới (chưa thể renew) để tránh pha loãng. `+
+    `Cùng mẫu số cho cả ba + tập lồng nhau (renew≥3 ⊆ ≥2 ⊆ ≥1) → <b>luôn R1 ≥ R2 ≥ R3</b>. `+
+    `<b>R1</b> = % sub đủ tuổi đã renew ít nhất 1 lần (lưu ý: cao hơn ô Week 1 của cohort rất mới trong bảng, vì bảng dùng mẫu số gồm cả sub chưa đủ tuổi). `+
+    `<b>⚠️</b> ở R2/R3 = trong mẫu còn sub chưa đủ tuổi đạt kỳ đó → R2/R3 là retention tích luỹ tới hiện tại, sẽ tăng khi cohort già thêm.`;
 
   document.getElementById('hdrSub').textContent=
     `${RAW.length} subscriptions · cập nhật tới ${ymd(ANCHOR)}`;
