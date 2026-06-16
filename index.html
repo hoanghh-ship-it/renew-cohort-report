@@ -564,18 +564,18 @@ function render(){
     cancelled:kpiSubs.filter(s=>s.status==='cancelled').length,
     unpaid:kpiSubs.filter(s=>s.status==='unpaid').length,
   };
-  // R1/R2/R3 trên CÙNG base = mọi sub đủ tuổi renew ≥1 kỳ (renewable).
-  // Cùng base + tập lồng nhau (renew≥3 ⊆ ≥2 ⊆ ≥1) → luôn R1≥R2≥R3.
-  // R1 = % renew ≥1 của toàn dân số đủ tuổi (= trung bình có trọng số cột Week 1 của triangle, không vượt cohort cao nhất).
-  // ⚠️ ở R2/R3 = trong base còn sub chưa đủ tuổi đạt kỳ đó → R2/R3 là retention TÍCH LUỸ tới hiện tại (sẽ tăng khi già thêm).
-  // Mẫu số = các sub ĐÃ ĐỦ TUỔI renew (age ≥ 1 chu kỳ billing) — loại sub quá mới chưa thể renew (tránh pha loãng).
-  // Cùng mẫu số cho R1/R2/R3 + tập lồng nhau → luôn R1 ≥ R2 ≥ R3. R1 = % sub đủ tuổi đã renew ≥1 lần.
-  const base = kpiSubs.filter(s=>ageOf(s)>=intervalDays(s));
+  // R1/R2/R3 — MỖI kỳ có MẪU SỐ RIÊNG: chỉ tính các sub đã đủ tuổi đạt đúng kỳ đó, loại cohort chưa đủ age.
+  //   R_k = (# sub đã renew ≥k) / (# sub có age ≥ k chu kỳ billing).
+  //   R1 = renew≥1 / (age ≥1 chu kỳ);  R2 = renew≥2 / (age ≥2 chu kỳ);  R3 = renew≥3 / (age ≥3 chu kỳ).
+  // Loại sub chưa đủ tuổi khỏi CẢ tử lẫn mẫu ⇒ hết bias "tích luỹ", không còn cần cảnh báo ⚠️.
+  // Mẫu số khác nhau theo kỳ ⇒ R1≥R2≥R3 KHÔNG còn được đảm bảo — đây là retention thật của cohort đủ tuổi từng kỳ.
+  const base = kpiSubs.filter(s=>ageOf(s)>=intervalDays(s));   // sub đủ tuổi renew ≥1 kỳ (dùng cho nhãn TỔNG)
   const baseN=base.length;
   const Rtot=[1,2,3].map(k=>{
-    if(!baseN) return {cnt:0,den:0,na:true,warn:false,aged:0};
-    const aged=base.filter(s=>ageOf(s)>=k*intervalDays(s)).length;  // số sub trong mẫu đã đủ tuổi đạt kỳ k
-    return {cnt:base.filter(s=>renewals(s)>=k).length, den:baseN, na:false, warn:aged<baseN, aged:aged};
+    const elig=base.filter(s=>ageOf(s)>=k*intervalDays(s));  // chỉ cohort đã đủ tuổi đạt kỳ k
+    const den=elig.length;
+    if(!den) return {cnt:0,den:0,na:true,warn:false,aged:0};
+    return {cnt:elig.filter(s=>renewals(s)>=k).length, den:den, na:false, warn:false, aged:den};
   });
   const rpct=t=>(t && !t.na && t.den)?(t.cnt/t.den*100):null;
   const warnIc=t=>t&&t.warn?` <span class="warn-ic" title="${t.den-t.aged}/${t.den} sub trong mẫu chưa đủ tuổi để đạt kỳ này — R này là retention TÍCH LUỸ tới hiện tại, sẽ tăng khi cohort già thêm">⚠️</span>`:'';
@@ -621,17 +621,17 @@ function render(){
       <td>${r.cycles}</td><td>${r.active}</td><td>${r.cancelled}</td><td>${r.unpaid}</td>
     </tr>`).join('');
   document.querySelector('#tbl tfoot').innerHTML=
-    `<tr><td>TỔNG <span style="color:var(--mut);font-weight:400;font-size:11px">(R1/R2/R3 trên ${baseN} sub đủ tuổi renew, R1≥R2≥R3)</span></td><td></td><td>${T.n}</td>
+    `<tr><td>TỔNG <span style="color:var(--mut);font-weight:400;font-size:11px">(${baseN} sub đủ tuổi renew ≥1 kỳ · mỗi Rk dùng mẫu số riêng = sub đủ tuổi đạt kỳ k, xem tử/mẫu ở từng ô)</span></td><td></td><td>${T.n}</td>
       ${Rtot.map(t=>`<td>${rpct(t)==null?'–':rpct(t).toFixed(1)+'% <span style="color:var(--mut);font-size:11px;font-weight:400">('+t.cnt+'/'+t.den+')</span>'+warnIc(t)}</td>`).join('')}
       <td>${T.cycles}</td><td>${T.active}</td><td>${T.cancelled}</td><td>${T.unpaid}</td></tr>`;
 
   document.getElementById('footNote').innerHTML=
     `<b>R1/R2/R3</b> = % sub đã renew ít nhất 1/2/3 lần. Renew suy ra từ việc kỳ thanh toán `+
     `(<code>period_starts_at</code>) đã tiến qua kỳ đầu so với <code>created_at</code>. `+
-    `<b>Mẫu số = các sub đã đủ tuổi renew</b> (age ≥ 1 chu kỳ billing) — KHÔNG gồm sub quá mới (chưa thể renew) để tránh pha loãng. `+
-    `Cùng mẫu số cho cả ba + tập lồng nhau (renew≥3 ⊆ ≥2 ⊆ ≥1) → <b>luôn R1 ≥ R2 ≥ R3</b>. `+
-    `<b>R1</b> = % sub đủ tuổi đã renew ít nhất 1 lần (lưu ý: cao hơn ô Week 1 của cohort rất mới trong bảng, vì bảng dùng mẫu số gồm cả sub chưa đủ tuổi). `+
-    `<b>⚠️</b> ở R2/R3 = trong mẫu còn sub chưa đủ tuổi đạt kỳ đó → R2/R3 là retention tích luỹ tới hiện tại, sẽ tăng khi cohort già thêm.`;
+    `<b>Mẫu số RIÊNG theo từng kỳ</b> — Rk chỉ tính trên các sub đã đủ tuổi đạt kỳ k: R1 dùng sub age ≥1 chu kỳ, R2 dùng age ≥2 chu kỳ, R3 dùng age ≥3 chu kỳ. `+
+    `Sub chưa đủ tuổi đạt kỳ k bị loại khỏi cả tử lẫn mẫu của Rk (không pha loãng, không còn cảnh báo ⚠️). `+
+    `Vì mẫu số khác nhau theo kỳ nên <b>R1 ≥ R2 ≥ R3 KHÔNG còn được đảm bảo</b> — mỗi Rk là retention thật của nhóm cohort đã đủ tuổi đạt kỳ đó. `+
+    `Số trong ngoặc ở hàng TỔNG là <b>(đã renew ≥k / số sub đủ tuổi đạt kỳ k)</b>.`;
 
   document.getElementById('hdrSub').textContent=
     `${RAW.length} subscriptions · cập nhật tới ${ymd(ANCHOR)}`;
