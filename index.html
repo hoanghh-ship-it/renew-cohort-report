@@ -146,6 +146,7 @@
   .tab-btn.on{color:var(--acc);border-bottom-color:var(--acc)}
   .kpi .v.bad{color:var(--bad)} .kpi .v.warn{color:var(--warn)}
   .kpi.cancel::before{background:var(--bad)}
+  .tri th.tdh,.tri td.tdcell{border-left:3px solid #cbd3e2}
   ::-webkit-scrollbar{height:10px;width:10px}
   ::-webkit-scrollbar-thumb{background:#cfd6e3;border-radius:8px}
   ::-webkit-scrollbar-thumb:hover{background:#bac3d4}
@@ -597,8 +598,8 @@ function renderCancelTriangle(subs){
     return;
   }
   const ageDays=key=>Math.floor((ANCHOR-new Date(key+'T00:00:00Z'))/86400000);
-  // huỷ tích luỹ + max để scale màu
-  let maxRate=0; const cum={};
+  // huỷ tích luỹ D0→D7 + tổng huỷ tới hiện tại (TD); tách max để scale màu độc lập
+  let maxRate=0, maxTD=0; const cum={}, td={};
   keys.forEach(key=>{
     const grp=g[key], n=grp.length, aw=ageDays(key), arr=[];
     for(let D=0;D<=MAXD;D++){
@@ -609,16 +610,21 @@ function renderCancelTriangle(subs){
       arr.push({D,c,p,obs});
     }
     cum[key]=arr;
+    const tc=grp.filter(s=>s.status==='cancelled').length;   // tổng huỷ tới hiện tại (mọi mốc)
+    const tp=n?tc/n:0; td[key]={c:tc,p:tp}; maxTD=Math.max(maxTD,tp);
   });
-  const color=p=>{
-    const t=maxRate>0?Math.min(1,p/maxRate):0;
+  // factory màu trắng→đỏ, scale theo max truyền vào
+  const mkColor=max=>p=>{
+    const t=max>0?Math.min(1,p/max):0;
     const lo=[255,255,255], hi=[224,68,62];   // white -> red
     const c=lo.map((v,i)=>Math.round(v+(hi[i]-v)*t));
     return `background:rgb(${c[0]},${c[1]},${c[2]});color:${t>0.55?'#fff':'#14233f'}`;
   };
+  const color=mkColor(maxRate), colorTD=mkColor(maxTD);
   let head='<tr><th class="lcol">Cohort Start<span class="sub2">'+(CTRIGRAN==='day'?'Ngày bắt đầu':'Tuần bắt đầu')+'</span></th>'+
            '<th class="lcol">Sub đã thu<span class="sub2">paid base</span></th>';
   for(let D=0;D<=MAXD;D++) head+=`<th>D${D}${D===0?'<span class="sub2">same-day</span>':''}</th>`;
+  head+='<th class="tdh">Cancel TD<span class="sub2">to date · mọi mốc</span></th>';
   head+='</tr>';
   tbl.querySelector('thead').innerHTML=head;
   let body='';
@@ -632,6 +638,9 @@ function renderCancelTriangle(subs){
       const txt=CTRIMODE==='pct'?(pt.p*100).toFixed(1)+'%':pt.c;
       row+=`<td class="cell" style="${color(pt.p)}" title="${pt.c}/${n} huỷ trong ${pt.D} ngày = ${(pt.p*100).toFixed(1)}%">${txt}</td>`;
     });
+    const t=td[key];
+    const tdTxt=CTRIMODE==='pct'?(t.p*100).toFixed(1)+'%':t.c;
+    row+=`<td class="cell tdcell" style="${colorTD(t.p)}" title="${t.c}/${n} sub đã huỷ tới hiện tại (mọi mốc, tuổi cohort ${ageDays(key)}d) = ${(t.p*100).toFixed(1)}%">${tdTxt}</td>`;
     row+='</tr>';
     body+=row;
   });
