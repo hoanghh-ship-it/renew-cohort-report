@@ -267,8 +267,8 @@
     <div class="kpis" id="cancelKpis"></div>
 
     <div class="card">
-      <h2>Cancel D0 → D7 theo cohort</h2>
-      <p class="note" style="margin:-6px 0 12px">Mỗi hàng = 1 cohort <b>đầy đủ</b> theo ngày/tuần tạo. <b>D0…D7</b> = % sub <b>đã thu tiền</b> (status ≠ created) đã huỷ <b>tính đến hết ngày thứ D</b> (huỷ tích luỹ → tăng dần qua các cột; <b>D0</b> = huỷ trong ngày đầu). Mốc ngày dùng <code>floor</code> nên churn tại lần renew (vd huỷ ngay sau khi bị tính tiền ngày 7) rơi đúng vào D7. <b>Cancel TD</b> = % sub <b>của riêng cohort này</b> đã huỷ tính đến nay (mọi mốc, không giới hạn 7 ngày) = (sub của cohort đã huỷ) ÷ (size cohort) — tính độc lập từng dòng, <b>KHÔNG</b> cộng dồn các cohort khác hay tổng toàn thời gian. <b>TD &gt; D7</b> nghĩa là phần lớn churn của cohort xảy ra <b>sau D7</b>, tại các lần renew kế tiếp (D14/D21/D28… với gói tuần). Ô <b>—</b> = cohort chưa đủ tuổi quan sát mốc đó. Thời điểm huỷ lấy từ <code>updated_at</code>. Màu đỏ đậm = tỷ lệ cao (D0→D7 và TD scale màu riêng). Bộ lọc ngày chỉ chọn cohort hiển thị (không cắt số sub trong cohort); funnel/giá/version áp dụng đầy đủ.</p>
+      <h2>Cancel theo mốc ngày · theo cohort (D0 → D90)</h2>
+      <p class="note" style="margin:-6px 0 12px">Mỗi hàng = 1 cohort <b>đầy đủ</b> theo ngày/tuần tạo. Cột <b>D0, D1, D3, D7, D14, D30, D60, D90</b> = % sub <b>đã thu tiền</b> (status ≠ created) đã huỷ <b>tính đến hết ngày thứ D</b> (huỷ tích luỹ → tăng dần qua các cột; <b>D0</b> = huỷ trong ngày đầu). Mốc dài tới D90 để thấy churn của <b>gói tháng (huỷ ~D30/D60) và gói năm</b> — nếu chỉ xem tới D7 thì gói tháng luôn = 0 ở mọi cột dù thực tế huỷ rất nhiều sau đó. Mốc ngày dùng <code>floor</code> nên churn tại lần renew (vd huỷ ngay sau khi bị tính tiền) rơi đúng vào mốc đó. <b>Cancel TD</b> = % sub <b>của riêng cohort này</b> đã huỷ tính đến nay (mọi mốc, không giới hạn 7 ngày) = (sub của cohort đã huỷ) ÷ (size cohort) — tính độc lập từng dòng, <b>KHÔNG</b> cộng dồn các cohort khác hay tổng toàn thời gian. <b>TD &gt; D7</b> nghĩa là phần lớn churn của cohort xảy ra <b>sau D7</b>, tại các lần renew kế tiếp (D14/D21/D28… với gói tuần). Ô <b>—</b> = cohort chưa đủ tuổi quan sát mốc đó. Thời điểm huỷ lấy từ <code>updated_at</code>. Màu đỏ đậm = tỷ lệ cao (D0→D7 và TD scale màu riêng). Bộ lọc ngày chỉ chọn cohort hiển thị (không cắt số sub trong cohort); funnel/giá/version áp dụng đầy đủ.</p>
       <div style="display:flex;gap:18px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
         <div style="display:flex;gap:10px;align-items:center">
           <span style="color:var(--mut);font-size:12px">Cohort:</span>
@@ -594,7 +594,9 @@ function renderCancelOverview(subs){
 // → tránh việc bộ lọc ngày xẻ đôi cohort tuần khiến D7 lệch.
 function renderCancelTriangle(pop, fromT, toT){
   const tbl=document.getElementById('cancelTri');
-  const MAXD=7;
+  // Mốc ngày: gói tuần churn ở D7/D14, gói tháng ở D30/D60, gói năm xa hơn → cần mốc dài
+  // để KHÔNG bị "D0-D7=0 nhưng TD cao" (churn nằm sau D7, ở các kỳ renew tiếp theo).
+  const MS=[0,1,3,7,14,30,60,90];
   const paid=pop.filter(s=>s.status!=='created');   // chỉ sub đã thu tiền
   const g={};
   paid.forEach(s=>{const k=CTRIGRAN==='day'?ymd(parse(s.created_at)):mondayOf(parse(s.created_at));(g[k]=g[k]||[]).push(s);});
@@ -607,17 +609,17 @@ function renderCancelTriangle(pop, fromT, toT){
     return;
   }
   const ageDays=key=>Math.floor((ANCHOR-new Date(key+'T00:00:00Z'))/86400000);
-  // huỷ tích luỹ D0→D7 (day-bucket = floor) + tổng huỷ tới hiện tại (TD); tách max để scale màu độc lập
+  // huỷ tích luỹ theo mốc (day-bucket = floor) + tổng huỷ tới hiện tại (TD); tách max để scale màu độc lập
   let maxRate=0, maxTD=0; const cum={}, td={};
   keys.forEach(key=>{
     const grp=g[key], n=grp.length, aw=ageDays(key), arr=[];
-    for(let D=0;D<=MAXD;D++){
+    MS.forEach(D=>{
       const obs=D<=aw;
       const c=obs?grp.filter(s=>s.status==='cancelled'&&cancelDayIdx(s)<=D).length:null;
       const p=obs?c/n:null;
       if(obs) maxRate=Math.max(maxRate,p);
       arr.push({D,c,p,obs});
-    }
+    });
     cum[key]=arr;
     const tc=grp.filter(s=>s.status==='cancelled').length;   // tổng huỷ tới hiện tại (mọi mốc)
     const tp=n?tc/n:0; td[key]={c:tc,p:tp}; maxTD=Math.max(maxTD,tp);
@@ -632,7 +634,7 @@ function renderCancelTriangle(pop, fromT, toT){
   const color=mkColor(maxRate), colorTD=mkColor(maxTD);
   let head='<tr><th class="lcol">Cohort Start<span class="sub2">'+(CTRIGRAN==='day'?'Ngày bắt đầu':'Tuần bắt đầu')+'</span></th>'+
            '<th class="lcol">Sub đã thu<span class="sub2">paid base</span></th>';
-  for(let D=0;D<=MAXD;D++) head+=`<th>D${D}${D===0?'<span class="sub2">same-day</span>':''}</th>`;
+  MS.forEach(D=>{ head+=`<th>D${D}${D===0?'<span class="sub2">same-day</span>':''}</th>`; });
   head+='<th class="tdh">Cancel TD<span class="sub2">% cohort này đã huỷ</span></th>';
   head+='</tr>';
   tbl.querySelector('thead').innerHTML=head;
