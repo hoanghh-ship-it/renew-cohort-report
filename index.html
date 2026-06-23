@@ -601,8 +601,9 @@ function renderCancelTriangle(pop, fromT, toT){
   const g={};
   paid.forEach(s=>{const k=CTRIGRAN==='day'?ymd(parse(s.created_at)):mondayOf(parse(s.created_at));(g[k]=g[k]||[]).push(s);});
   // chỉ hiện cohort có cohort-start nằm trong range (snap về đầu tuần khi gom theo tuần)
+  // sắp xếp MỚI NHẤT → CŨ NHẤT (cohort gần đây ở trên cùng)
   const lowKey=CTRIGRAN==='day'?ymd(fromT):mondayOf(fromT);
-  const keys=Object.keys(g).filter(k=>k>=lowKey && new Date(k+'T00:00:00Z')<=toT).sort();
+  const keys=Object.keys(g).filter(k=>k>=lowKey && new Date(k+'T00:00:00Z')<=toT).sort().reverse();
   if(!keys.length){
     tbl.querySelector('thead').innerHTML='';
     tbl.querySelector('tbody').innerHTML='<tr><td class="na">Không có dữ liệu trong khoảng này.</td></tr>';
